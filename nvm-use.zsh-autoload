@@ -1,0 +1,26 @@
+# Please add into ~/.zshrc:
+# source ~/bin/nvm-use.zsh-autoload
+
+if [ -z "$ZSH_VERSION" ]; then
+    return 0;
+fi
+
+autoload -U add-zsh-hook
+
+load-nvmrc() {
+    local nvmrc_path
+    nvmrc_path=$(nvm_find_nvmrc)
+    if [ -n "$nvmrc_path" ]; then
+        local required_version
+        required_version=$(<"$nvmrc_path")
+        local current_version
+        current_version=$(nvm current)
+
+        if [ "$current_version" != "$required_version" ]; then
+            nvm use "$required_version"
+        fi
+  fi
+}
+
+add-zsh-hook chpwd load-nvmrc
+load-nvmrc
