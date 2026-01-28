@@ -5,4 +5,4 @@ BIN_DIR="$(dirname "$0")"
 
 brew update
 brew upgrade
-brew cleanup
+brew cleanup --prune=all
