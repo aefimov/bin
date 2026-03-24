@@ -10,4 +10,4 @@ git checkout $GIT_DEFAULT_BRANCH
 git pack-refs --all
 git pull --rebase --prune
 git fetch --prune --prune-tags 2>&1 | grep -v 'rejected' | tail -n +2
-git branch --format='%(refname:short) %(upstream:track,nobracket)' | grep ' gone$' | cut -d' ' -f1 | xargs -n1 git branch -d
+git branch --format='%(refname:short) %(upstream:track,nobracket)' | grep ' gone$' | cut -d' ' -f1 | xargs -n1 git branch -D
