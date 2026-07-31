@@ -4,6 +4,6 @@ BIN_DIR="$(dirname "$0")"
 (cd $BIN_DIR && git up)
 
 brew update
-brew upgrade
-brew upgrade --cask
+brew upgrade --no-ask
+brew upgrade --cask --no-ask
 brew cleanup --prune=all
