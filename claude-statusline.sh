@@ -262,7 +262,7 @@ process.stdin.on('end', () => {
     const today24Stats  = showSlim ? getTodayStats(tPaths24) : null;
 
     // — Segment A2: context bar —
-    const sA2 = `${barColor}${bar}${RESET} ${ctxTotal ? `${pct}%/✦${formatTokens(ctxTotal)}` : `${pct}%`}`;
+    const sA2 = `${barColor}${bar}${RESET} ${pct}%`;
 
     // — Segment B2: session tokens/cost —
     const sB2 = sessionTotal?.tokens > 0
@@ -279,8 +279,11 @@ process.stdin.on('end', () => {
         ? `${CC}${formatDuration(sessionThinkMs)}/⏱️${formatDuration(wallClockMs)}`
         : `⏱️${formatDuration(wallClockMs)}`;
 
-    // — Segment E2: session name —
-    const sE2 = sessionName ? `🎯${DIM}${sessionName}${RESET}` : '';
+    // — Segment E2: session name + context size —
+    const ctxSuffix = ctxTotal ? ` (✦${formatTokens(ctxTotal)} context)` : '';
+    const sE2 = sessionName
+        ? `🎯${DIM}${sessionName}${ctxSuffix}${RESET}`
+        : ctxTotal ? `${DIM}${ctxSuffix.trim()}${RESET}` : '';
 
     if (!need24) {
         // Single line only.
@@ -300,7 +303,7 @@ process.stdin.on('end', () => {
         const tokenPct  = Math.min(100, Math.floor((bolt.tokensUsed / bolt.tokenCap) * 100));
         const barColor3 = tokenPct >= 90 ? RED : tokenPct >= 70 ? YELLOW : GREEN;
         const bar3      = barColor3 + '█'.repeat(Math.round(tokenPct / 10)) + '░'.repeat(10 - Math.round(tokenPct / 10)) + RESET;
-        sA3 = `${bar3} ${tokenPct}%/✦${formatTokens(bolt.tokenCap)}`;
+        sA3 = `${bar3} ${tokenPct}%`;
         sB3 = `✦${formatTokens(bolt.tokensUsed)}/${YELLOW}$${bolt.costUsed.toFixed(2)}${RESET}`;
         sD3 = todayThinkMs > 0
             ? `${CC}${formatDuration(todayThinkMs)}/⏱️${formatDuration(wallClock24)}`
