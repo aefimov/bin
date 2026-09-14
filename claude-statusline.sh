@@ -4,8 +4,8 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 
-const BOLTABLE_STATE_DIR = path.join(os.homedir(), '.claude', 'boltable-limits');
-const BOLTABLE_CONFIG_PATH = path.join(os.homedir(), '.claude', 'boltable-config.json');
+const REPOSITORY_LIMITS_STATE_DIR = path.join(os.homedir(), '.claude', 'repository-limits');
+const REPOSITORY_LIMITS_CONFIG_PATH = path.join(os.homedir(), '.claude', 'repository-limits-config.json');
 
 const PRICE = {
     input: 3.0 / 1e6,
@@ -13,7 +13,6 @@ const PRICE = {
     cacheRead: 0.30 / 1e6,
     cacheWrite: 3.75 / 1e6,
 };
-
 
 function formatTokens(n) {
     if (n >= 1_000_000) return `${Math.round(n / 1_000_000)}M`;
@@ -45,12 +44,7 @@ function formatDuration(ms) {
     return sec ? `${m}m${sec}s` : `${m}m`;
 }
 
-function timeUntilMidnight() {
-    const now = new Date();
-    const midnight = new Date(now);
-    midnight.setHours(24, 0, 0, 0);
-    return formatDuration(midnight - now);
-}
+const DAY_MS = 24 * 3600 * 1000;
 
 function getSessionWallClockMs(transcriptPath) {
     try {
@@ -61,99 +55,7 @@ function getSessionWallClockMs(transcriptPath) {
     return null;
 }
 
-
-function getSessionTotalStats(transcriptPath) {
-    let tokens = 0, cost = 0;
-    try {
-        for (const line of fs.readFileSync(transcriptPath, 'utf8').split('\n')) {
-            try {
-                const u = JSON.parse(line)?.message?.usage;
-                if (!u) continue;
-                const inp = u.input_tokens || 0;
-                const out = u.output_tokens || 0;
-                const cr = u.cache_read_input_tokens || 0;
-                const cw = u.cache_creation_input_tokens || 0;
-                tokens += inp + out + cr + cw;
-                cost += inp * PRICE.input + out * PRICE.output + cr * PRICE.cacheRead + cw * PRICE.cacheWrite;
-            } catch {}
-        }
-    } catch {}
-    return { tokens, cost };
-}
-
-function getLastOpStats(transcriptPath) {
-    try {
-        const lines = fs.readFileSync(transcriptPath, 'utf8').trimEnd().split('\n');
-        let opIndex = 0, lastStats = null;
-        for (const line of lines) {
-            try {
-                const e = JSON.parse(line);
-                const u = e?.message?.usage;
-                if (!u) continue;
-                const input = u.input_tokens || 0;
-                const output = u.output_tokens || 0;
-                const cacheRead = u.cache_read_input_tokens || 0;
-                const cacheWrite = u.cache_creation_input_tokens || 0;
-                const tokens = input + output + cacheRead + cacheWrite;
-                if (tokens === 0) continue;
-                opIndex++;
-                const cost = input * PRICE.input + output * PRICE.output
-                    + cacheRead * PRICE.cacheRead + cacheWrite * PRICE.cacheWrite;
-                lastStats = { tokens, cost, opIndex };
-            } catch {}
-        }
-        return lastStats;
-    } catch {}
-    return null;
-}
-
-function loadBoltableConfig() {
-    const defaults = { work_start_hour: 9, work_end_hour: 17, daily_cost_cap_usd: 10.0, daily_token_cap: 1_000_000 };
-    try { return { ...defaults, ...JSON.parse(fs.readFileSync(BOLTABLE_CONFIG_PATH, 'utf8')) }; }
-    catch { return defaults; }
-}
-
-const boltableConfig = loadBoltableConfig();
-const BOLTABLE_TOKEN_CAP = boltableConfig.daily_token_cap;
-const BOLTABLE_WHITELIST = new Set(
-    (boltableConfig.whitelisted_repos || []).map(r => r.trim().toLowerCase()).filter(Boolean)
-);
-
-function getOrgRepo(repoData) {
-    try {
-        if (repoData?.owner && repoData?.name) return [repoData.owner, repoData.name];
-        const url = execSync('git remote get-url origin', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] }).trim();
-        const m = url.match(/[:/]([^/:]+)\/([^/]+?)(\.git)?\/?$/);
-        if (m) return [m[1], m[2]];
-    } catch {}
-    return [null, null];
-}
-
-function loadBoltableState(org, repo) {
-    const day = new Date().toISOString().slice(0, 10);
-    const safe = `${org}__${repo}`.toLowerCase().replace(/[^a-z0-9_.-]/g, '_');
-    const file = path.join(BOLTABLE_STATE_DIR, `${safe}__${day}.json`);
-    try { return JSON.parse(fs.readFileSync(file, 'utf8')); }
-    catch { return { tokens_used: 0, cost_usd: 0 }; }
-}
-
-function boltableData(repoData) {
-    const [org, repo] = getOrgRepo(repoData);
-    if ((org || '').toLowerCase() !== 'boltable') return null;
-    if (BOLTABLE_WHITELIST.has(`${(org || '').toLowerCase()}/${(repo || '').toLowerCase()}`)) return null;
-    const state = loadBoltableState(org, repo);
-    return {
-        tokensUsed: state.tokens_used || 0,
-        costUsed: state.cost_usd || 0,
-        tokenCap: BOLTABLE_TOKEN_CAP + (state.extra_token_cap || 0),
-        transcriptPaths: Object.keys(state.transcript_offsets || {}),
-    };
-}
-
-const DAY_MS = 24 * 3600 * 1000;
-
-// Wall-clock since the first activity within the last 24h window.
-// Scans past older entries to find the first one inside the window.
+// Wall-clock since the first entry within the last 24h window.
 function getTodayWallClockMs(transcriptPaths) {
     const cutoff = Date.now() - DAY_MS;
     let earliest = null;
@@ -164,9 +66,9 @@ function getTodayWallClockMs(transcriptPaths) {
                     const e = JSON.parse(line);
                     if (!e.timestamp) continue;
                     const ts = new Date(e.timestamp).getTime();
-                    if (ts < cutoff) continue; // before window, keep scanning
+                    if (ts < cutoff) continue;
                     if (earliest === null || ts < earliest) earliest = ts;
-                    break; // transcript is chronological — no earlier entry follows
+                    break;
                 } catch {}
             }
         } catch {}
@@ -174,8 +76,7 @@ function getTodayWallClockMs(transcriptPaths) {
     return earliest !== null ? Date.now() - earliest : 0;
 }
 
-// Sum API thinking time across transcripts since `cutoff` (0 = whole session).
-// Thinking time per request ≈ time from user submission to first assistant block.
+// Thinking time = user→first_assistant timestamp delta, optionally filtered by cutoff.
 function getThinkingMs(transcriptPaths, cutoff = 0) {
     let total = 0;
     for (const tp of transcriptPaths) {
@@ -200,10 +101,119 @@ function getThinkingMs(transcriptPaths, cutoff = 0) {
     return total;
 }
 
+function getSessionTotalStats(transcriptPath) {
+    let tokens = 0, cost = 0;
+    try {
+        for (const line of fs.readFileSync(transcriptPath, 'utf8').split('\n')) {
+            try {
+                const u = JSON.parse(line)?.message?.usage;
+                if (!u) continue;
+                const inp = u.input_tokens || 0;
+                const out = u.output_tokens || 0;
+                const cr = u.cache_read_input_tokens || 0;
+                const cw = u.cache_creation_input_tokens || 0;
+                tokens += inp + out + cr + cw;
+                cost += inp * PRICE.input + out * PRICE.output + cr * PRICE.cacheRead + cw * PRICE.cacheWrite;
+            } catch {}
+        }
+    } catch {}
+    return { tokens, cost };
+}
+
+// Token/cost totals for entries within the last 24h window.
+function getTodayStats(transcriptPaths) {
+    const cutoff = Date.now() - DAY_MS;
+    let tokens = 0, cost = 0;
+    for (const tp of transcriptPaths) {
+        try {
+            for (const line of fs.readFileSync(tp, 'utf8').split('\n')) {
+                try {
+                    const e = JSON.parse(line);
+                    if (!e.timestamp) continue;
+                    if (new Date(e.timestamp).getTime() < cutoff) continue;
+                    const u = e?.message?.usage;
+                    if (!u) continue;
+                    const inp = u.input_tokens || 0;
+                    const out = u.output_tokens || 0;
+                    const cr = u.cache_read_input_tokens || 0;
+                    const cw = u.cache_creation_input_tokens || 0;
+                    tokens += inp + out + cr + cw;
+                    cost += inp * PRICE.input + out * PRICE.output + cr * PRICE.cacheRead + cw * PRICE.cacheWrite;
+                } catch {}
+            }
+        } catch {}
+    }
+    return { tokens, cost };
+}
+
+function getLastOpStats(transcriptPath) {
+    try {
+        let opIndex = 0, lastStats = null;
+        for (const line of fs.readFileSync(transcriptPath, 'utf8').trimEnd().split('\n')) {
+            try {
+                const e = JSON.parse(line);
+                const u = e?.message?.usage;
+                if (!u) continue;
+                const input = u.input_tokens || 0;
+                const output = u.output_tokens || 0;
+                const cacheRead = u.cache_read_input_tokens || 0;
+                const cacheWrite = u.cache_creation_input_tokens || 0;
+                const tokens = input + output + cacheRead + cacheWrite;
+                if (tokens === 0) continue;
+                opIndex++;
+                const cost = input * PRICE.input + output * PRICE.output
+                    + cacheRead * PRICE.cacheRead + cacheWrite * PRICE.cacheWrite;
+                lastStats = { tokens, cost, opIndex };
+            } catch {}
+        }
+        return lastStats;
+    } catch {}
+    return null;
+}
+
+function loadRepositoryLimitsConfig() {
+    try { return JSON.parse(fs.readFileSync(REPOSITORY_LIMITS_CONFIG_PATH, 'utf8')); }
+    catch { return { repos: {} }; }
+}
+
+function getOrgRepo(repoData) {
+    try {
+        if (repoData?.owner && repoData?.name) return [repoData.owner, repoData.name];
+        const url = execSync('git remote get-url origin', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] }).trim();
+        const m = url.match(/[:/]([^/:]+)\/([^/]+?)(\.git)?\/?$/);
+        if (m) return [m[1], m[2]];
+    } catch {}
+    return [null, null];
+}
+
+function loadRepositoryLimitsState(org, repo) {
+    const day = new Date().toISOString().slice(0, 10);
+    const safe = `${org}__${repo}`.toLowerCase().replace(/[^a-z0-9_.-]/g, '_');
+    const file = path.join(REPOSITORY_LIMITS_STATE_DIR, `${safe}__${day}.json`);
+    try { return JSON.parse(fs.readFileSync(file, 'utf8')); }
+    catch { return { tokens_used: 0, cost_usd: 0 }; }
+}
+
+// Returns limit data for the current repo, or null if no limits are configured.
+function repositoryLimitsData(repoData) {
+    const [org, repo] = getOrgRepo(repoData);
+    if (!org || !repo) return null;
+    const config = loadRepositoryLimitsConfig();
+    const key = `${org}/${repo}`.toLowerCase();
+    const repoConfig = (config.repos || {})[key];
+    if (!repoConfig || !repoConfig.daily_token_cap) return null;
+    const state = loadRepositoryLimitsState(org, repo);
+    return {
+        tokensUsed: state.tokens_used || 0,
+        costUsed: state.cost_usd || 0,
+        tokenCap: repoConfig.daily_token_cap + (state.extra_token_cap || 0),
+        transcriptPaths: Object.keys(state.transcript_offsets || {}),
+    };
+}
+
 let input = '';
 process.stdin.on('data', chunk => input += chunk);
 process.stdin.on('end', () => {
-    fs.writeFileSync('/tmp/sl-payload.json', input);
     const data = JSON.parse(input);
     const model = data.model.display_name;
     const cwd = data.workspace?.current_dir || '';
@@ -217,9 +227,9 @@ process.stdin.on('end', () => {
 
     const CYAN = '\x1b[36m', GREEN = '\x1b[32m', YELLOW = '\x1b[33m', RED = '\x1b[31m', RESET = '\x1b[0m';
     const LIGHT_GREEN = '\x1b[92m', DIM = '\x1b[90m';
-    const CC = '🦀'; // Clawd the crab
+    const CC = '🦀';
 
-    // ── Line 1: [model] 📁 dir | 🌿 branch ──────────────────────────────────────
+    // ── Line 1: [model] 📁 dir | 🌿 branch ──────────────────────────────────
     let branch = '';
     try {
         branch = execSync('git branch --show-current', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] }).trim();
@@ -227,39 +237,53 @@ process.stdin.on('end', () => {
     } catch {}
     console.log(`${CYAN}[${model}]${RESET} 📁 ${dir}${branch}`);
 
-    // ── Lines 2–3: tabular output ─────────────────────────────────────────────
+    // ── Lines 2–3: tabular ───────────────────────────────────────────────────
     const SEP = ' | ';
     const barColor = pct >= 90 ? RED : pct >= 70 ? YELLOW : GREEN;
     const bar = '█'.repeat(Math.floor(pct / 10)) + '░'.repeat(10 - Math.floor(pct / 10));
 
-    const sessionTotal = transcriptPath ? getSessionTotalStats(transcriptPath) : null;
-    const lastOp       = transcriptPath ? getLastOpStats(transcriptPath) : null;
-    const wallClockMs  = transcriptPath ? (getSessionWallClockMs(transcriptPath) ?? durationMs) : durationMs;
+    const sessionTotal  = transcriptPath ? getSessionTotalStats(transcriptPath) : null;
+    const lastOp        = transcriptPath ? getLastOpStats(transcriptPath) : null;
+    const wallClockMs   = transcriptPath ? (getSessionWallClockMs(transcriptPath) ?? durationMs) : durationMs;
     const sessionThinkMs = transcriptPath ? getThinkingMs([transcriptPath]) : 0;
-    const bolt         = boltableData(data.workspace?.repo);
+    const bolt          = repositoryLimitsData(data.workspace?.repo);
 
-    // — Segment A: bar + ctx —
+    // Show a slim 24h line when no limits are configured but session spans >1 day.
+    const showSlim = !bolt && wallClockMs > DAY_MS;
+
+    // Transcript paths for 24h aggregation.
+    const tPaths24 = bolt?.transcriptPaths?.length
+        ? bolt.transcriptPaths
+        : (transcriptPath ? [transcriptPath] : []);
+
+    const need24 = bolt || showSlim;
+    const wallClock24   = need24 ? getTodayWallClockMs(tPaths24) : 0;
+    const todayThinkMs  = need24 ? getThinkingMs(tPaths24, Date.now() - DAY_MS) : 0;
+    const today24Stats  = showSlim ? getTodayStats(tPaths24) : null;
+
+    // — Segment A2: context bar —
     const sA2 = `${barColor}${bar}${RESET} ${ctxTotal ? `${pct}%/✦${formatTokens(ctxTotal)}` : `${pct}%`}`;
 
-    // — Segment B: session tokens/cost —
+    // — Segment B2: session tokens/cost —
     const sB2 = sessionTotal?.tokens > 0
         ? `✦${formatTokens(sessionTotal.tokens)}/${YELLOW}$${sessionTotal.cost.toFixed(2)}${RESET}`
         : `${YELLOW}$${sessionCost.toFixed(2)}${RESET}`;
 
-    // — Segment C: last op (line 2 only) —
+    // — Segment C2: last op —
     const sC2 = lastOp
         ? `${DIM}💬${lastOp.opIndex}${RESET} ${LIGHT_GREEN}↑${RESET}✦${formatTokens(lastOp.tokens)} ${YELLOW}$${lastOp.cost.toFixed(3)}${RESET}`
         : '';
 
-    // — Segment D: timing —
+    // — Segment D2: session timing —
     const sD2 = sessionThinkMs > 0
         ? `${CC}${formatDuration(sessionThinkMs)}/⏱️${formatDuration(wallClockMs)}`
         : `⏱️${formatDuration(wallClockMs)}`;
 
-    // — Segment E: session name —
+    // — Segment E2: session name —
     const sE2 = sessionName ? `🎯${DIM}${sessionName}${RESET}` : '';
 
-    if (!bolt) {
+    if (!need24) {
+        // Single line only.
         const parts = [sA2, sB2];
         if (sC2) parts.push(sC2);
         parts.push(sD2);
@@ -268,33 +292,45 @@ process.stdin.on('end', () => {
         return;
     }
 
-    // Line 3 segments
-    const limitExceeded = bolt.tokensUsed >= bolt.tokenCap;
-    const tokenPct  = Math.min(100, Math.floor((bolt.tokensUsed / bolt.tokenCap) * 100));
-    const barColor3 = tokenPct >= 90 ? RED : tokenPct >= 70 ? YELLOW : GREEN;
-    const bar3      = barColor3 + '█'.repeat(Math.round(tokenPct / 10)) + '░'.repeat(10 - Math.round(tokenPct / 10)) + RESET;
-    const tPaths    = bolt.transcriptPaths.length ? bolt.transcriptPaths : (transcriptPath ? [transcriptPath] : []);
-    const wallClock24  = getTodayWallClockMs(tPaths);
-    const todayThinkMs = getThinkingMs(tPaths, Date.now() - DAY_MS);
+    // — Line 3 segments —
+    let sA3, sB3, sD3, sE3;
 
-    const sA3 = `${bar3} ${tokenPct}%/✦${formatTokens(bolt.tokenCap)}`;
-    const sB3 = `✦${formatTokens(bolt.tokensUsed)}/${YELLOW}$${bolt.costUsed.toFixed(2)}${RESET}`;
-    const sD3 = todayThinkMs > 0
-        ? `${CC}${formatDuration(todayThinkMs)}/⏱️${formatDuration(wallClock24)}`
-        : `⏱️${formatDuration(wallClock24)}`;
-    const sE3 = limitExceeded ? `🔒${DIM}limits exceeded${RESET}` : `🔓${DIM}limits${RESET}`;
+    if (bolt) {
+        const limitExceeded = bolt.tokensUsed >= bolt.tokenCap;
+        const tokenPct  = Math.min(100, Math.floor((bolt.tokensUsed / bolt.tokenCap) * 100));
+        const barColor3 = tokenPct >= 90 ? RED : tokenPct >= 70 ? YELLOW : GREEN;
+        const bar3      = barColor3 + '█'.repeat(Math.round(tokenPct / 10)) + '░'.repeat(10 - Math.round(tokenPct / 10)) + RESET;
+        sA3 = `${bar3} ${tokenPct}%/✦${formatTokens(bolt.tokenCap)}`;
+        sB3 = `✦${formatTokens(bolt.tokensUsed)}/${YELLOW}$${bolt.costUsed.toFixed(2)}${RESET}`;
+        sD3 = todayThinkMs > 0
+            ? `${CC}${formatDuration(todayThinkMs)}/⏱️${formatDuration(wallClock24)}`
+            : `⏱️${formatDuration(wallClock24)}`;
+        sE3 = limitExceeded
+            ? `🔒${DIM}limits (✦${formatTokens(bolt.tokenCap)} per 1d)${RESET}`
+            : `🔓${DIM}limits (✦${formatTokens(bolt.tokenCap)} per 1d)${RESET}`;
+    } else {
+        // Slim 24h line — no bar, no limits label.
+        sA3 = '';
+        sB3 = today24Stats?.tokens > 0
+            ? `✦${formatTokens(today24Stats.tokens)}/${YELLOW}$${today24Stats.cost.toFixed(2)}${RESET}`
+            : '';
+        sD3 = todayThinkMs > 0
+            ? `${CC}${formatDuration(todayThinkMs)}/⏱️${formatDuration(wallClock24)}`
+            : `⏱️${formatDuration(wallClock24)}`;
+        sE3 = `${DIM}per 1d${RESET}`;
+    }
 
-    // Measure column widths
-    const wA = Math.max(visLen(sA2), visLen(sA3));
+    // Column widths — A3 is blank in slim mode so wA stays driven by sA2.
+    const wA = bolt ? Math.max(visLen(sA2), visLen(sA3)) : visLen(sA2);
     const wB = Math.max(visLen(sB2), visLen(sB3));
     const wC = visLen(sC2);
     const wD = Math.max(visLen(sD2), visLen(sD3));
 
-    // Output line 2
     const l2 = padVis(sA2, wA) + SEP + padVis(sB2, wB) + (wC ? SEP + padVis(sC2, wC) : '') + SEP + padVis(sD2, wD) + (sE2 ? SEP + sE2 : '');
     console.log(l2);
 
-    // Output line 3 — pad where line 2 has C segment
-    const l3 = padVis(sA3, wA) + SEP + padVis(sB3, wB) + (wC ? ' '.repeat(SEP.length + wC) : '') + SEP + padVis(sD3, wD) + SEP + sE3;
+    // Line 3: blank A in slim mode, blank C always (no last-op for 24h view).
+    const l3a = bolt ? padVis(sA3, wA) : ' '.repeat(wA);
+    const l3 = l3a + SEP + padVis(sB3, wB) + (wC ? ' '.repeat(SEP.length + wC) : '') + SEP + padVis(sD3, wD) + SEP + sE3;
     console.log(l3);
 });
