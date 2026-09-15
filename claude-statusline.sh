@@ -17,18 +17,22 @@ const PRICE = {
     get cacheWrite() { return this.cacheWrite5m; }, // legacy alias
 };
 
+function trimZeros(s) {
+    return s.includes('.') ? s.replace(/\.?0+$/, '') : s;
+}
+
 function formatTokens(n) {
-    if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
-    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-    if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+    if (n >= 1_000_000_000) return `${trimZeros((n / 1_000_000_000).toFixed(1))}B`;
+    if (n >= 1_000_000) return `${trimZeros((n / 1_000_000).toFixed(1))}M`;
+    if (n >= 1000) return `${trimZeros((n / 1000).toFixed(1))}K`;
     return `${n}`;
 }
 
 function formatCost(n) {
-    if (n >= 1_000_000_000) return `~$${(n / 1_000_000_000).toFixed(1)}B`;
-    if (n >= 1_000_000) return `~$${(n / 1_000_000).toFixed(1)}M`;
-    if (n >= 1000) return `~$${(n / 1000).toFixed(1)}K`;
-    if (n >= 0.01) return `~$${n.toFixed(2)}`;
+    if (n >= 1_000_000_000) return `~$${trimZeros((n / 1_000_000_000).toFixed(1))}B`;
+    if (n >= 1_000_000) return `~$${trimZeros((n / 1_000_000).toFixed(1))}M`;
+    if (n >= 1000) return `~$${trimZeros((n / 1000).toFixed(1))}K`;
+    if (n >= 0.01) return `~$${trimZeros(n.toFixed(2))}`;
     return `~$${n.toPrecision(1)}`;
 }
 
@@ -474,8 +478,8 @@ process.stdin.on('end', () => {
         const msUntilReset = new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00Z').getTime() + DAY_MS - Date.now();
         const hoursLeft = Math.ceil(msUntilReset / 3600000);
         sE3 = limitExceeded
-            ? `🔒${DIM}limits (◈${formatTokens(tokensLeft)} left for next ${hoursLeft}h)${RESET}`
-            : `🔓${DIM}limits (◈${formatTokens(tokensLeft)} left for next ${hoursLeft}h)${RESET}`;
+            ? `🔒${RED}Limit hit${RESET}${DIM} — resets in ${hoursLeft}h to ◈${formatTokens(limits.tokenCap)}${RESET}`
+            : `🔓${DIM}◈${formatTokens(tokensLeft)} left, resets in ${hoursLeft}h${RESET}`;
     } else {
         sA3 = `${DIM}24 hours${RESET}`;
         sB3 = sB3base;
@@ -550,7 +554,7 @@ process.stdin.on('end', () => {
     console.log(l2);
 
     if (showLine3) {
-        const l3 = padVis(sA3, wA) + SEP + padVis(sB3, wB) + (wC ? SEP + padVis(sC3, wC) : '') + (wDelta ? SEP + padVis(sDelta3, wDelta) : '') + (wD ? SEP + padVis(sD3, wD) : '') + SEP + padVis(sE3wall, wE) + (sE3 ? SEP + sE3 : '') + SEP + sF3;
+        const l3 = padVis(sA3, wA) + SEP + padVis(sB3, wB) + (wC ? SEP + padVis(sC3, wC) : '') + (wDelta ? SEP + padVis(sDelta3, wDelta) : '') + (wD ? SEP + padVis(sD3, wD) : '') + SEP + padVis(sE3wall, wE) + (sE3 ? SEP + sE3 : '') + (sE3 ? '' : SEP + sF3);
         console.log(l3);
     }
 
