@@ -470,9 +470,12 @@ process.stdin.on('end', () => {
         sD3 = sD3base;
         sE3wall = sE3wallBase;
         sDelta3 = sDelta3base;
+        const tokensLeft = Math.max(0, limits.tokenCap - today24Tokens);
+        const msUntilReset = new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00Z').getTime() + DAY_MS - Date.now();
+        const hoursLeft = Math.ceil(msUntilReset / 3600000);
         sE3 = limitExceeded
-            ? `🔒${DIM}limits (◈${formatTokens(limits.tokenCap)} per 1d)${RESET}`
-            : `🔓${DIM}limits (◈${formatTokens(limits.tokenCap)} per 1d)${RESET}`;
+            ? `🔒${DIM}limits (◈${formatTokens(tokensLeft)} left for next ${hoursLeft}h)${RESET}`
+            : `🔓${DIM}limits (◈${formatTokens(tokensLeft)} left for next ${hoursLeft}h)${RESET}`;
     } else {
         sA3 = `${DIM}24 hours${RESET}`;
         sB3 = sB3base;
