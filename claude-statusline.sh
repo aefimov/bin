@@ -445,7 +445,7 @@ process.stdin.on('end', () => {
     // — Segment F2: session name + context size —
     const ctxSuffix = ctxTotal ? ` (◈${formatTokens(ctxTotal)} context)` : '';
     const sF2 = sessionName
-        ? `🎯${DIM}${sessionName}${ctxSuffix}${RESET}`
+        ? `🔮${DIM}${sessionName}${ctxSuffix}${RESET}`
         : ctxTotal ? `${DIM}${ctxSuffix.trim()}${RESET}` : '';
 
     // — Line 3 segments —
@@ -542,14 +542,18 @@ process.stdin.on('end', () => {
     const wD     = Math.max(visLen(sD2), showLine3 ? visLen(sD3) : 0, visLen(sD4));
     const wE     = Math.max(visLen(sE2wall), showLine3 ? visLen(sE3wall) : 0, visLen(sE4wall));
 
-    const l2 = padVis(sA2, wA) + SEP + padVis(sB2, wB) + (wC ? SEP + padVis(sC2, wC) : '') + (wDelta ? SEP + padVis(sDelta2, wDelta) : '') + (wD ? SEP + padVis(sD2, wD) : '') + SEP + padVis(sE2wall, wE) + (sF2 ? SEP + sF2 : '');
+    const sF3 = `${DIM}📁This project sessions for today${RESET}`;
+    const sF4 = `${DIM}🏆This month all projects & sessions${RESET}`;
+    const wF = Math.max(visLen(sF2), showLine3 ? visLen(sF3) : 0, visLen(sF4));
+
+    const l2 = padVis(sA2, wA) + SEP + padVis(sB2, wB) + (wC ? SEP + padVis(sC2, wC) : '') + (wDelta ? SEP + padVis(sDelta2, wDelta) : '') + (wD ? SEP + padVis(sD2, wD) : '') + SEP + padVis(sE2wall, wE) + SEP + padVis(sF2, wF);
     console.log(l2);
 
     if (showLine3) {
-        const l3 = padVis(sA3, wA) + SEP + padVis(sB3, wB) + (wC ? SEP + padVis(sC3, wC) : '') + (wDelta ? SEP + padVis(sDelta3, wDelta) : '') + (wD ? SEP + padVis(sD3, wD) : '') + SEP + padVis(sE3wall, wE) + (sE3 ? SEP + sE3 : '');
+        const l3 = padVis(sA3, wA) + SEP + padVis(sB3, wB) + (wC ? SEP + padVis(sC3, wC) : '') + (wDelta ? SEP + padVis(sDelta3, wDelta) : '') + (wD ? SEP + padVis(sD3, wD) : '') + SEP + padVis(sE3wall, wE) + (sE3 ? SEP + sE3 : '') + SEP + sF3;
         console.log(l3);
     }
 
-    const l4 = padVis(sA4, wA) + SEP + padVis(sB4, wB) + (wC ? SEP + padVis(sC4, wC) : '') + (wDelta ? SEP + padVis(sDelta4, wDelta) : '') + (wD ? SEP + padVis(sD4, wD) : '') + SEP + padVis(sE4wall, wE);
+    const l4 = padVis(sA4, wA) + SEP + padVis(sB4, wB) + (wC ? SEP + padVis(sC4, wC) : '') + (wDelta ? SEP + padVis(sDelta4, wDelta) : '') + (wD ? SEP + padVis(sD4, wD) : '') + SEP + padVis(sE4wall, wE) + SEP + sF4;
     console.log(l4);
 });
